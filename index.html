@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow Finder — Playlist Cohesion</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #07070f;
+  --surface: #0d0d1a;
+  --surface2: #12122080;
+  --border: #1a1a30;
+  --border2: #222240;
+  --green: #1db954;
+  --green-faint: rgba(29,185,84,0.07);
+  --amber: #f5a623;
+  --red: #ff4444;
+  --purple: #a78bfa;
+  --sky: #38bdf8;
+  --text: #ddddf0;
+  --muted: #4d4d72;
+  --muted2: #7070a0;
+  --mono: 'JetBrains Mono', monospace;
+  --display: 'Syne', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: var(–mono);
+min-height: 100vh;
+font-size: 13px;
+line-height: 1.6;
+overflow-x: hidden;
+}
+
+/* Scanline texture */
+body::after {
+content: ‘’;
+position: fixed; inset: 0;
+background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px);
+pointer-events: none;
+z-index: 9999;
+}
+
+/* Dot grid */
+body::before {
+content: ‘’;
+position: fixed; inset: 0;
+background-image: radial-gradient(rgba(29,185,84,0.09) 1px, transparent 1px);
+background-size: 28px 28px;
+pointer-events: none;
+z-index: 0;
+}
+
+/* ── MODAL ── */
+.modal-overlay {
+position: fixed; inset: 0; z-index: 200;
+background: rgba(0,0,0,0.88);
+display: flex; align-items: center; justify-content: center;
+padding: 20px;
+}
+.modal {
+background: var(–surface);
+border: 1px solid var(–border2);
+border-radius: 3px;
+padding: 36px;
+width: 100%; max-width: 520px;
+position: relative;
+}
+.modal-title {
+font-family: var(–display);
+font-size: 20px;
+font-weight: 800;
+color: var(–green);
+margin-bottom: 4px;
+}
+.modal-sub {
+color: var(–muted2);
+font-size: 12px;
+margin-bottom: 28px;
+line-height: 1.7;
+}
+.form-label {
+display: block;
+font-size: 10px;
+color: var(–muted2);
+text-transform: uppercase;
+letter-spacing: 0.12em;
+margin-bottom: 6px;
+margin-top: 16px;
+}
+.form-label:first-of-type { margin-top: 0; }
+.form-input {
+width: 100%;
+background: var(–bg);
+border: 1px solid var(–border2);
+color: var(–text);
+font-family: var(–mono);
+font-size: 12px;
+padding: 10px 12px;
+border-radius: 2px;
+outline: none;
+transition: border-color 0.2s;
+}
+.form-input:focus { border-color: var(–green); }
+.form-hint {
+font-size: 11px;
+color: var(–muted);
+margin-top: 5px;
+margin-bottom: 4px;
+line-height: 1.6;
+}
+.form-hint a { color: var(–green); text-decoration: none; }
+.form-hint code {
+background: var(–border);
+padding: 1px 5px;
+border-radius: 2px;
+font-size: 11px;
+}
+.setup-box {
+background: var(–green-faint);
+border: 1px solid rgba(29,185,84,0.18);
+border-radius: 2px;
+padding: 12px 14px;
+font-size: 11px;
+color: var(–muted2);
+line-height: 1.8;
+margin-bottom: 20px;
+}
+.setup-box b { color: var(–green); font-weight: 600; }
+.amber-box {
+background: rgba(245,166,35,0.05);
+border: 1px solid rgba(245,166,35,0.2);
+border-radius: 2px;
+padding: 12px 14px;
+font-size: 11px;
+color: var(–muted2);
+line-height: 1.7;
+margin-top: 20px;
+margin-bottom: 8px;
+}
+.amber-box b { color: var(–amber); }
+
+/* ── BUTTONS ── */
+.btn {
+display: inline-flex; align-items: center; gap: 8px;
+background: var(–green); color: #000;
+border: none; border-radius: 2px;
+font-family: var(–mono); font-size: 13px; font-weight: 700;
+padding: 10px 20px;
+cursor: pointer; text-decoration: none;
+transition: opacity 0.15s, transform 0.1s;
+letter-spacing: 0.02em;
+white-space: nowrap;
+}
+.btn:hover { opacity: 0.82; }
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+.btn-ghost {
+background: transparent;
+color: var(–muted2);
+border: 1px solid var(–border2);
+border-radius: 2px;
+font-family: var(–mono); font-size: 12px;
+padding: 7px 14px;
+cursor: pointer;
+transition: color 0.15s, border-color 0.15s;
+}
+.btn-ghost:hover { color: var(–text); border-color: var(–muted); }
+
+/* ── HEADER ── */
+#header {
+position: relative; z-index: 10;
+display: flex; align-items: center; justify-content: space-between;
+padding: 14px 24px;
+border-bottom: 1px solid var(–border);
+background: rgba(7,7,15,0.95);
+backdrop-filter: blur(8px);
+}
+.logo {
+font-family: var(–display);
+font-size: 17px; font-weight: 800;
+color: var(–green);
+letter-spacing: -0.02em;
+}
+.logo-tag {
+font-family: var(–mono);
+font-size: 11px; font-weight: 400;
+color: var(–muted);
+margin-left: 10px;
+}
+.header-right { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(–muted2); }
+
+/* ── SCREENS ── */
+#login-screen {
+position: relative; z-index: 1;
+min-height: calc(100vh - 53px);
+display: none;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+text-align: center;
+gap: 28px;
+padding: 48px 24px;
+}
+#login-screen.active { display: flex; }
+
+.hero-eyebrow {
+font-size: 10px;
+letter-spacing: 0.2em;
+text-transform: uppercase;
+color: var(–green);
+opacity: 0.7;
+}
+.hero-h1 {
+font-family: var(–display);
+font-size: clamp(40px, 7vw, 80px);
+font-weight: 800;
+line-height: 0.95;
+color: var(–text);
+letter-spacing: -0.03em;
+}
+.hero-h1 em { font-style: normal; color: var(–green); }
+.hero-sub {
+color: var(–muted2);
+max-width: 380px;
+line-height: 1.75;
+font-size: 13px;
+}
+
+.feature-pills {
+display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+max-width: 480px;
+}
+.pill {
+font-size: 10px;
+letter-spacing: 0.07em;
+color: var(–muted2);
+border: 1px solid var(–border2);
+padding: 4px 10px;
+border-radius: 20px;
+}
+
+#app-screen {
+position: relative; z-index: 1;
+display: none;
+padding: 28px 24px;
+max-width: 860px;
+margin: 0 auto;
+}
+#app-screen.active { display: block; }
+
+/* ── SECTION LABEL ── */
+.slabel {
+font-size: 10px;
+text-transform: uppercase;
+letter-spacing: 0.14em;
+color: var(–muted);
+margin-bottom: 8px;
+}
+
+/* ── PLAYLIST BAR ── */
+.playlist-bar {
+display: flex; gap: 10px; margin-bottom: 28px;
+}
+.playlist-select {
+flex: 1;
+background: var(–surface);
+border: 1px solid var(–border2);
+color: var(–text);
+font-family: var(–mono); font-size: 13px;
+padding: 10px 12px;
+border-radius: 2px; outline: none; cursor: pointer;
+transition: border-color 0.2s;
+min-width: 0;
+}
+.playlist-select:focus { border-color: var(–green); }
+.playlist-select option { background: #0d0d1a; }
+
+/* ── STATUS BAR ── */
+.status-msg {
+display: none;
+font-size: 11px;
+padding: 8px 14px;
+border-radius: 2px;
+margin-bottom: 16px;
+border: 1px solid var(–border);
+color: var(–muted2);
+}
+.status-msg.show { display: block; }
+.status-msg.warn { color: var(–amber); border-color: rgba(245,166,35,0.25); background: rgba(245,166,35,0.04); }
+.status-msg.err { color: var(–red); border-color: rgba(255,68,68,0.25); background: rgba(255,68,68,0.04); }
+
+/* ── SCORE CARD ── */
+.score-card {
+background: var(–surface);
+border: 1px solid var(–border2);
+border-radius: 3px;
+padding: 24px 28px;
+margin-bottom: 20px;
+display: grid;
+grid-template-columns: 1fr auto;
+gap: 16px;
+align-items: center;
+}
+.score-num {
+font-family: var(–display);
+font-size: 64px; font-weight: 800;
+line-height: 1;
+transition: color 0.3s;
+}
+.score-num.good { color: var(–green); }
+.score-num.ok { color: var(–amber); }
+.score-num.bad { color: var(–red); }
+.score-num.na { color: var(–muted); }
+.score-desc { font-size: 12px; color: var(–muted2); margin-top: 6px; }
+.score-count-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(–muted); text-align: right; }
+.score-count {
+font-family: var(–display);
+font-size: 40px; font-weight: 800;
+color: var(–muted); text-align: right;
+line-height: 1;
+}
+
+/* ── LEGEND ── */
+.legend-row {
+display: flex; flex-wrap: wrap; gap: 14px;
+margin-bottom: 20px;
+font-size: 10px; color: var(–muted);
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.ldot { width: 8px; height: 8px; border-radius: 1px; flex-shrink: 0; }
+.legend-sep { width: 1px; background: var(–border); height: 12px; align-self: center; }
+
+/* ── TRACK LIST ── */
+.track-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 24px; }
+
+.track-row {
+background: var(–surface);
+border: 1px solid transparent;
+border-radius: 2px;
+padding: 11px 14px;
+display: grid;
+grid-template-columns: 26px minmax(0,1fr) auto;
+gap: 10px;
+align-items: center;
+transition: border-color 0.15s;
+}
+.track-row:hover { border-color: var(–border2); }
+.track-row.wallflower {
+border-color: rgba(255,68,68,0.25);
+background: rgba(255,68,68,0.03);
+}
+.track-row.awkward {
+border-color: rgba(245,166,35,0.2);
+background: rgba(245,166,35,0.025);
+}
+.track-num { font-size: 11px; color: var(–muted); text-align: right; }
+.track-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track-artist { font-size: 11px; color: var(–muted2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.track-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+
+.flow-badge {
+font-size: 9px; font-weight: 700;
+padding: 2px 7px; border-radius: 1px;
+letter-spacing: 0.07em;
+text-transform: uppercase;
+}
+.flow-badge.great { background: rgba(29,185,84,0.12); color: var(–green); }
+.flow-badge.ok { background: rgba(245,166,35,0.12); color: var(–amber); }
+.flow-badge.weak { background: rgba(255,68,68,0.12); color: var(–red); }
+
+/* Mini feature bars */
+.mini-bars { display: flex; gap: 3px; align-items: flex-end; height: 18px; }
+.mbar { width: 5px; border-radius: 1px; min-height: 2px; }
+
+/* Transition connector */
+.connector {
+height: 2px; background: var(–border);
+margin: 0 14px; position: relative; border-radius: 1px; overflow: hidden;
+}
+.connector-fill {
+position: absolute; left: 0; top: 0; height: 100%;
+border-radius: 1px; transition: width 0.4s;
+}
+
+/* ── SECTIONS ── */
+.section-card {
+background: var(–surface);
+border: 1px solid var(–border2);
+border-radius: 3px;
+padding: 24px;
+margin-bottom: 20px;
+}
+.section-card-title {
+font-family: var(–display);
+font-size: 15px; font-weight: 800;
+margin-bottom: 14px;
+}
+
+/* AI output */
+.ai-output { font-size: 13px; line-height: 1.85; color: var(–muted2); }
+.ai-output p { margin-bottom: 12px; }
+.ai-output p:last-child { margin-bottom: 0; }
+.ai-loading {
+display: flex; align-items: center; gap: 10px;
+color: var(–muted); font-size: 12px;
+}
+
+/* Recommendations */
+.rec-grid { display: flex; flex-direction: column; gap: 8px; }
+.rec-row {
+display: flex; align-items: center; gap: 12px;
+padding: 10px 12px;
+background: rgba(255,255,255,0.02);
+border: 1px solid var(–border);
+border-radius: 2px;
+}
+.rec-thumb {
+width: 38px; height: 38px; border-radius: 2px;
+object-fit: cover; flex-shrink: 0;
+}
+.rec-placeholder {
+width: 38px; height: 38px; border-radius: 2px;
+background: var(–border2); display: flex; align-items: center;
+justify-content: center; font-size: 16px; flex-shrink: 0;
+}
+.rec-info { flex: 1; min-width: 0; }
+.rec-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-artist { font-size: 11px; color: var(–muted2); }
+.rec-link {
+font-size: 11px; color: var(–green);
+text-decoration: none; white-space: nowrap;
+padding: 4px 9px; border: 1px solid rgba(29,185,84,0.25);
+border-radius: 2px; transition: background 0.15s;
+flex-shrink: 0;
+}
+.rec-link:hover { background: rgba(29,185,84,0.1); }
+
+/* ── SPINNER ── */
+.spin {
+display: inline-block; width: 11px; height: 11px;
+border: 2px solid var(–border2); border-top-color: var(–green);
+border-radius: 50%; animation: rot 0.65s linear infinite;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ── MISC ── */
+a { color: var(–green); text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+
+</head>
+<body>
+
+<!-- ════ SETUP MODAL ════ -->
+
+<div class="modal-overlay" id="setup-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-title">⚡ Flow Finder Setup</div>
+    <div class="modal-sub">One-time setup to connect your Spotify account. No backend, no data stored server-side.</div>
+
+```
+<div class="setup-box">
+  <b>Step 1 —</b> Go to <a href="https://developer.spotify.com/dashboard" target="_blank">developer.spotify.com/dashboard</a><br>
+  <b>Step 2 —</b> Create an app (any name/description will do)<br>
+  <b>Step 3 —</b> In Settings → Redirect URIs, add exactly: <code id="redirect-uri-display" style="color:var(--green)"></code><br>
+  <b>Step 4 —</b> Copy your Client ID into the field below
+</div>
+
+<label class="form-label">Spotify Client ID</label>
+<input type="text" class="form-input" id="client-id-input" placeholder="Paste your Client ID…" autocomplete="off" spellcheck="false">
+<div class="form-hint">Found in your Spotify app dashboard under "Settings".</div>
+
+<div class="amber-box">
+  <b>Optional — AI Analysis:</b> Enter your Anthropic API key to get Claude's written breakdown of why your wallflower tracks don't fit and what to look for instead. Leave blank to skip this feature.
+</div>
+
+<label class="form-label">Anthropic API Key <span style="color:var(--muted)">(optional)</span></label>
+<input type="password" class="form-input" id="claude-key-input" placeholder="sk-ant-…">
+<div class="form-hint">Only used client-side. Never sent anywhere except Anthropic's API.</div>
+
+<div style="margin-top:24px;display:flex;gap:10px">
+  <button class="btn" onclick="saveSetup()">Save & Continue →</button>
+  <button class="btn-ghost" onclick="closeSetup()">Cancel</button>
+</div>
+```
+
+  </div>
+</div>
+
+<!-- ════ HEADER ════ -->
+
+<div id="header">
+  <div style="display:flex;align-items:baseline">
+    <div class="logo">Flow Finder</div>
+    <div class="logo-tag">// playlist cohesion</div>
+  </div>
+  <div class="header-right">
+    <span id="user-display" style="display:none"></span>
+    <button class="btn-ghost" onclick="showSetup()" style="font-size:11px;padding:5px 10px">⚙ Setup</button>
+    <button class="btn-ghost" id="logout-btn" onclick="logout()" style="display:none;font-size:11px;padding:5px 10px">Logout</button>
+  </div>
+</div>
+
+<!-- ════ LOGIN SCREEN ════ -->
+
+<div id="login-screen" class="active">
+  <div class="hero-eyebrow">Spotify Playlist Analyser</div>
+  <div class="hero-h1">Make your<br>playlist <em>flow.</em></div>
+  <div class="hero-sub">
+    Analyses audio features across your whole playlist, spots the songs breaking the room's vibe, and finds tracks that actually slot in.
+  </div>
+  <div class="feature-pills">
+    <span class="pill">Tempo matching</span>
+    <span class="pill">Energy profiling</span>
+    <span class="pill">Mood coherence</span>
+    <span class="pill">Wallflower detection</span>
+    <span class="pill">AI analysis</span>
+    <span class="pill">Smart recs</span>
+  </div>
+  <button class="btn" onclick="loginWithSpotify()" style="font-size:14px;padding:13px 28px">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+    Connect Spotify
+  </button>
+  <div style="font-size:11px;color:var(--muted)">Runs entirely in your browser. Nothing stored server-side.</div>
+</div>
+
+<!-- ════ APP SCREEN ════ -->
+
+<div id="app-screen">
+
+  <div class="slabel">Your Playlists</div>
+  <div class="playlist-bar">
+    <select class="playlist-select" id="playlist-select">
+      <option value="">Loading playlists…</option>
+    </select>
+    <button class="btn" id="analyse-btn" onclick="analysePlaylist()">
+      <span class="spin" id="btn-spinner" style="display:none"></span>
+      Analyse Flow
+    </button>
+  </div>
+
+  <div class="status-msg" id="status-msg"></div>
+
+  <!-- ── RESULTS ── -->
+
+  <div id="results" style="display:none">
+
+```
+<!-- Score -->
+<div class="score-card">
+  <div>
+    <div class="slabel">Playlist Cohesion Score</div>
+    <div class="score-num na" id="score-num">–</div>
+    <div class="score-desc" id="score-desc"></div>
+  </div>
+  <div style="text-align:right">
+    <div class="score-count-label">tracks analysed</div>
+    <div class="score-count" id="track-count">–</div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend-row">
+  <div class="legend-item"><div class="ldot" style="background:var(--green)"></div> Flows well</div>
+  <div class="legend-item"><div class="ldot" style="background:var(--amber)"></div> Slightly off</div>
+  <div class="legend-item"><div class="ldot" style="background:var(--red)"></div> Wallflower</div>
+  <div class="legend-sep"></div>
+  <div class="legend-item"><div class="ldot" style="background:var(--green)"></div> Energy</div>
+  <div class="legend-item"><div class="ldot" style="background:var(--purple)"></div> Mood</div>
+  <div class="legend-item"><div class="ldot" style="background:var(--amber)"></div> Tempo</div>
+  <div class="legend-item"><div class="ldot" style="background:var(--sky)"></div> Danceability</div>
+</div>
+
+<!-- Track list -->
+<div class="track-list" id="track-list"></div>
+
+<!-- AI Analysis -->
+<div class="section-card" id="ai-card" style="display:none">
+  <div class="section-card-title" style="color:var(--green)">// AI Flow Analysis</div>
+  <div id="ai-output"></div>
+</div>
+
+<!-- Recommendations -->
+<div class="section-card" id="recs-card" style="display:none">
+  <div class="section-card-title">Songs That Would Actually Fit</div>
+  <div style="font-size:11px;color:var(--muted2);margin-bottom:16px">
+    Based on the audio centre of gravity of your best-fitting tracks — not just the seed songs.
+  </div>
+  <div class="rec-grid" id="rec-grid"></div>
+</div>
+```
+
+  </div><!-- /results -->
+</div><!-- /app-screen -->
+
+<script>
+// ══════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════
+const REDIRECT_URI = window.location.origin + window.location.pathname;
+const SCOPES = 'playlist-read-private playlist-read-collaborative';
+
+// Audio feature weights (must sum to 1.0)
+// Tuned for "seamless focus listening" — tempo + energy are most jarring when mismatched
+const WEIGHTS = {
+  energy:           0.27,
+  valence:          0.10,
+  danceability:     0.18,
+  acousticness:     0.10,
+  instrumentalness: 0.10,
+  tempoN:           0.18,  // normalised tempo
+  loudnessN:        0.07,  // normalised loudness
+};
+
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+let S = {
+  token: null,
+  clientId: null,
+  claudeKey: null,
+  user: null,
+  playlists: [],
+};
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+document.getElementById('redirect-uri-display').textContent = REDIRECT_URI;
+
+async function init() {
+  S.clientId = localStorage.getItem('ff_cid');
+  S.claudeKey = localStorage.getItem('ff_ck') || null;
+
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+
+  if (error) {
+    history.replaceState({}, '', window.location.pathname);
+    setStatus('Spotify authorisation cancelled.', 'warn');
+  }
+
+  if (code) {
+    history.replaceState({}, '', window.location.pathname);
+    await handleCode(code);
+    return;
+  }
+
+  const stored = sessionStorage.getItem('ff_tok');
+  if (stored) {
+    S.token = stored;
+    try { await loadUser(); showApp(); } catch { logout(); }
+    return;
+  }
+
+  if (!S.clientId) showSetup();
+}
+
+// ══════════════════════════════════════════════════════════
+// SETUP MODAL
+// ══════════════════════════════════════════════════════════
+function showSetup() {
+  document.getElementById('client-id-input').value = S.clientId || '';
+  document.getElementById('claude-key-input').value = S.claudeKey || '';
+  document.getElementById('setup-modal').style.display = 'flex';
+}
+function closeSetup() {
+  document.getElementById('setup-modal').style.display = 'none';
+}
+function saveSetup() {
+  const cid = document.getElementById('client-id-input').value.trim();
+  const ck  = document.getElementById('claude-key-input').value.trim();
+  if (!cid) { alert('Please enter your Spotify Client ID.'); return; }
+  localStorage.setItem('ff_cid', cid);
+  if (ck) localStorage.setItem('ff_ck', ck); else localStorage.removeItem('ff_ck');
+  S.clientId = cid;
+  S.claudeKey = ck || null;
+  closeSetup();
+}
+
+// ══════════════════════════════════════════════════════════
+// PKCE OAUTH
+// ══════════════════════════════════════════════════════════
+async function pkceVerifier() {
+  const arr = new Uint8Array(64);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function pkceChallenge(v) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+async function loginWithSpotify() {
+  if (!S.clientId) { showSetup(); return; }
+  const v = await pkceVerifier();
+  const c = await pkceChallenge(v);
+  sessionStorage.setItem('ff_v', v);
+  const url = new URL('https://accounts.spotify.com/authorize');
+  url.searchParams.set('client_id', S.clientId);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('redirect_uri', REDIRECT_URI);
+  url.searchParams.set('scope', SCOPES);
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('code_challenge', c);
+  window.location.href = url.toString();
+}
+
+async function handleCode(code) {
+  const v = sessionStorage.getItem('ff_v');
+  if (!v) { setStatus('OAuth error: verifier missing. Try again.', 'err'); return; }
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code, redirect_uri: REDIRECT_URI,
+      client_id: S.clientId, code_verifier: v,
+    }),
+  });
+  const d = await res.json();
+  if (!res.ok) { setStatus(`Token error: ${d.error_description || d.error}`, 'err'); return; }
+  sessionStorage.removeItem('ff_v');
+  sessionStorage.setItem('ff_tok', d.access_token);
+  S.token = d.access_token;
+  await loadUser();
+  showApp();
+}
+
+function logout() {
+  sessionStorage.removeItem('ff_tok');
+  S.token = S.user = null;
+  document.getElementById('user-display').style.display = 'none';
+  document.getElementById('logout-btn').style.display = 'none';
+  document.getElementById('login-screen').classList.add('active');
+  document.getElementById('app-screen').classList.remove('active');
+}
+
+// ══════════════════════════════════════════════════════════
+// SPOTIFY API
+// ══════════════════════════════════════════════════════════
+async function spotifyGet(path, params = {}) {
+  const url = new URL(`https://api.spotify.com/v1${path}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${S.token}` } });
+  if (res.status === 401) { logout(); throw new Error('Session expired'); }
+  if (!res.ok) throw new Error(`Spotify ${res.status}`);
+  return res.json();
+}
+
+async function loadUser() {
+  S.user = await spotifyGet('/me');
+  const el = document.getElementById('user-display');
+  el.textContent = S.user.display_name || S.user.id;
+  el.style.display = '';
+  document.getElementById('logout-btn').style.display = '';
+}
+
+async function loadPlaylists() {
+  const all = [];
+  let offset = 0;
+  while (true) {
+    const d = await spotifyGet('/me/playlists', { limit: 50, offset });
+    all.push(...d.items.filter(Boolean));
+    if (!d.next) break;
+    offset += 50;
+  }
+  return all;
+}
+
+async function loadTracks(pid) {
+  const all = [];
+  let offset = 0;
+  while (true) {
+    const d = await spotifyGet(`/playlists/${pid}/tracks`, {
+      limit: 100, offset,
+      fields: 'items(track(id,name,artists,album(images),external_urls)),next'
+    });
+    all.push(...d.items.filter(i => i.track?.id).map(i => i.track));
+    if (!d.next) break;
+    offset += 100;
+  }
+  return all;
+}
+
+async function loadAudioFeatures(ids) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    try {
+      const d = await spotifyGet('/audio-features', { ids: ids.slice(i, i + 100).join(',') });
+      out.push(...(d.audio_features || []));
+    } catch { return null; }
+  }
+  return out;
+}
+
+async function getRecommendations(seedIds, target) {
+  try {
+    return await spotifyGet('/recommendations', {
+      seed_tracks: seedIds.slice(0, 5).join(','),
+      limit: 10,
+      target_energy:       target.energy.toFixed(3),
+      target_valence:      target.valence.toFixed(3),
+      target_danceability: target.danceability.toFixed(3),
+      target_tempo:        target.tempo.toFixed(1),
+    });
+  } catch { return null; }
+}
+
+// ══════════════════════════════════════════════════════════
+// COHESION ALGORITHM
+// ══════════════════════════════════════════════════════════
+function normTempo(t)    { return Math.max(0, Math.min(1, (t - 55) / 155)); }
+function normLoudness(l) { return Math.max(0, Math.min(1, (l + 60) / 55)); }
+
+function vec(af) {
+  return {
+    energy:           af.energy           || 0,
+    valence:          af.valence          || 0,
+    danceability:     af.danceability     || 0,
+    acousticness:     af.acousticness     || 0,
+    instrumentalness: af.instrumentalness || 0,
+    tempoN:           normTempo(af.tempo  || 120),
+    loudnessN:        normLoudness(af.loudness || -10),
+    tempo:            af.tempo || 120, // raw, for display / API
+  };
+}
+
+function wdist(a, b) {
+  return Math.sqrt(
+    Object.keys(WEIGHTS).reduce((s, k) => s + WEIGHTS[k] * (a[k] - b[k]) ** 2, 0)
+  );
+}
+
+function centroid(vecs) {
+  const keys = Object.keys(WEIGHTS);
+  const c = {};
+  keys.forEach(k => { c[k] = vecs.reduce((s, v) => s + v[k], 0) / vecs.length; });
+  c.energy       = vecs.reduce((s, v) => s + v.energy, 0) / vecs.length;
+  c.valence      = vecs.reduce((s, v) => s + v.valence, 0) / vecs.length;
+  c.danceability = vecs.reduce((s, v) => s + v.danceability, 0) / vecs.length;
+  c.tempo        = vecs.reduce((s, v) => s + v.tempo, 0) / vecs.length;
+  return c;
+}
+
+function analyseFlow(tracks, audioFeatures) {
+  const vecs = audioFeatures.map(vec);
+  const cen  = centroid(vecs);
+
+  // Distance of each track from the playlist centre
+  const centDists = vecs.map(v => wdist(v, cen));
+  const maxCent   = Math.max(...centDists, 0.001);
+
+  // How rough each transition is (avg of prev→this + this→next)
+  const transDists = vecs.map((v, i) => {
+    const dPrev = i > 0                ? wdist(vecs[i - 1], v) : 0;
+    const dNext = i < vecs.length - 1 ? wdist(v, vecs[i + 1]) : 0;
+    const n     = (i > 0 ? 1 : 0) + (i < vecs.length - 1 ? 1 : 0);
+    return n ? (dPrev + dNext) / n : 0;
+  });
+  const maxTrans = Math.max(...transDists, 0.001);
+
+  // Outlier score: 0 = perfect, 1 = wallflower
+  const outlier = vecs.map((_, i) =>
+    (centDists[i] / maxCent) * 0.55 + (transDists[i] / maxTrans) * 0.45
+  );
+
+  // Overall cohesion (0–100), adjusted so even a "good" playlist doesn't cap at 100
+  const avg = outlier.reduce((s, v) => s + v, 0) / outlier.length;
+  const cohesion = Math.round(Math.max(0, Math.min(100, (1 - avg * 1.15) * 100)));
+
+  const classified = tracks.map((t, i) => ({
+    track:       t,
+    vec:         vecs[i],
+    outlier:     outlier[i],
+    transDist:   transDists[i],
+    maxTrans,
+    cls: outlier[i] > 0.62 ? 'wallflower' : outlier[i] > 0.36 ? 'awkward' : 'great',
+  }));
+
+  return { classified, cohesion, centroid: cen };
+}
+
+// ══════════════════════════════════════════════════════════
+// CLAUDE ANALYSIS
+// ══════════════════════════════════════════════════════════
+async function runClaude(classified, cen) {
+  if (!S.claudeKey) return;
+
+  const aiCard = document.getElementById('ai-card');
+  const aiOut  = document.getElementById('ai-output');
+  aiCard.style.display = 'block';
+  aiOut.innerHTML = '<div class="ai-loading"><span class="spin"></span> Claude is analysing…</div>';
+
+  const wf   = classified.filter(c => c.cls === 'wallflower');
+  const good = classified.filter(c => c.cls === 'great');
+
+  const tracks = classified.map(c =>
+    `${c.cls.toUpperCase().padEnd(11)} | ${c.track.name} — ${c.track.artists[0]?.name} ` +
+    `| e:${c.vec.energy.toFixed(2)} mood:${c.vec.valence.toFixed(2)} ` +
+    `bpm:${Math.round(c.vec.tempo)} dance:${c.vec.danceability.toFixed(2)}`
+  ).join('\n');
+
+  const prompt =
+`You're analysing a Spotify playlist for someone who listens to music while working or focusing deeply. Their goal: songs should be seamless — no sudden energy shifts, no tempo whiplash, no mood interruptions.
+
+Here's the full playlist with audio feature scores (energy 0–1, mood/valence 0–1, tempo BPM, danceability 0–1). The algorithm has classified each track:
+
+${tracks}
+
+Playlist centre of gravity: energy ${cen.energy.toFixed(2)}, mood ${cen.valence.toFixed(2)}, tempo ${Math.round(cen.tempo)} BPM
+
+Wallflowers found: ${wf.length}. Tracks that flow well: ${good.length}.
+
+In 2–3 short, direct paragraphs:
+1. Explain exactly why the wallflower tracks break the flow — be specific about which audio dimensions are clashing
+2. Describe the "audio fingerprint" of this playlist's core — what a perfectly-fitting track would look like
+3. Give one concrete search strategy (genre, mood descriptor, BPM range, or artist type) to find tracks that fit
+
+Write like a music producer, not a chatbot. No pleasantries, no filler.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': S.claudeKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 700,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const d = await res.json();
+    const text = d.content?.[0]?.text || 'No response.';
+    // Format paragraphs
+    aiOut.innerHTML = text.split(/\n\n+/).map(p => `<p>${esc(p)}</p>`).join('');
+  } catch (e) {
+    aiOut.innerHTML = `<div style="color:var(--muted2)">Claude analysis unavailable: ${esc(e.message)}. Check your API key in setup.</div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// UI
+// ══════════════════════════════════════════════════════════
+function showApp() {
+  document.getElementById('login-screen').classList.remove('active');
+  document.getElementById('app-screen').classList.add('active');
+  populatePlaylistSelector();
+}
+
+async function populatePlaylistSelector() {
+  const sel = document.getElementById('playlist-select');
+  sel.innerHTML = '<option value="">Loading playlists…</option>';
+  try {
+    S.playlists = await loadPlaylists();
+    sel.innerHTML = S.playlists.length
+      ? S.playlists.map(p => `<option value="${p.id}">${esc(p.name)} (${p.tracks.total} tracks)</option>`).join('')
+      : '<option value="">No playlists found</option>';
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load</option>';
+    setStatus(`Error loading playlists: ${e.message}`, 'err');
+  }
+}
+
+async function analysePlaylist() {
+  const pid = document.getElementById('playlist-select').value;
+  if (!pid) return;
+
+  const btn = document.getElementById('analyse-btn');
+  btn.disabled = true;
+  document.getElementById('btn-spinner').style.display = 'inline-block';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('ai-card').style.display = 'none';
+  document.getElementById('recs-card').style.display = 'none';
+  clearStatus();
+
+  try {
+    setStatus('Loading tracks…');
+    const tracks = await loadTracks(pid);
+
+    if (tracks.length < 3) {
+      setStatus('Need at least 3 tracks to analyse flow.', 'warn');
+      return;
+    }
+
+    setStatus('Fetching audio features…');
+    const ids = tracks.map(t => t.id);
+    const af  = await loadAudioFeatures(ids);
+
+    if (!af || af.filter(Boolean).length < tracks.length * 0.5) {
+      setStatus(
+        '⚠ Audio features are unavailable for this Spotify developer app ' +
+        '(Spotify deprecated this for apps created after Nov 2024). ' +
+        'Showing track list only. AI analysis still works if you have an API key.',
+        'warn'
+      );
+      renderTracksOnly(tracks);
+      return;
+    }
+
+    clearStatus();
+
+    // Only keep tracks with valid AF
+    const pairs = tracks.map((t, i) => ({ t, af: af[i] })).filter(p => p.af);
+    const { classified, cohesion, centroid: cen } = analyseFlow(pairs.map(p => p.t), pairs.map(p => p.af));
+
+    renderResults(classified, cohesion, pairs.length);
+
+    // Recommendations from best-fitting tracks
+    const seedIds = classified.filter(c => c.cls === 'great').slice(0, 5).map(c => c.track.id);
+    if (seedIds.length) {
+      const recs = await getRecommendations(seedIds, cen);
+      if (recs?.tracks?.length) renderRecs(recs.tracks, ids);
+    }
+
+    // Claude analysis
+    await runClaude(classified, cen);
+
+  } catch (e) {
+    setStatus(`Error: ${e.message}`, 'err');
+  } finally {
+    btn.disabled = false;
+    document.getElementById('btn-spinner').style.display = 'none';
+  }
+}
+
+function renderResults(classified, cohesion, total) {
+  // Score card
+  const scoreEl = document.getElementById('score-num');
+  scoreEl.textContent = cohesion;
+  scoreEl.className = 'score-num ' + (cohesion >= 72 ? 'good' : cohesion >= 52 ? 'ok' : 'bad');
+
+  const wfCount = classified.filter(c => c.cls === 'wallflower').length;
+  const awkCount = classified.filter(c => c.cls === 'awkward').length;
+
+  let desc = '';
+  if (cohesion >= 75)      desc = `${total - wfCount - awkCount} tracks holding the room together. Tight.`;
+  else if (cohesion >= 55) desc = `${wfCount + awkCount} tracks disrupting the flow — ${wfCount > 0 ? `${wfCount} wallflower${wfCount > 1 ? 's' : ''}` : 'mostly awkward transitions'}.`;
+  else                     desc = `${wfCount} wallflower${wfCount !== 1 ? 's' : ''} pulling the cohesion apart.`;
+
+  document.getElementById('score-desc').textContent = desc;
+  document.getElementById('track-count').textContent = total;
+
+  // Build track list
+  const list = document.getElementById('track-list');
+  list.innerHTML = '';
+
+  classified.forEach((c, i) => {
+    // Transition connector
+    if (i > 0) {
+      const pct = Math.max(8, Math.round((1 - c.transDist / c.maxTrans) * 100));
+      const col = c.transDist / c.maxTrans > 0.55
+        ? 'var(--red)' : c.transDist / c.maxTrans > 0.28
+        ? 'var(--amber)' : 'var(--green)';
+
+      const conn = document.createElement('div');
+      conn.className = 'connector';
+      conn.innerHTML = `<div class="connector-fill" style="width:${pct}%;background:${col}"></div>`;
+      list.appendChild(conn);
+    }
+
+    // Feature bars
+    const v = c.vec;
+    const bar = (val, color) =>
+      `<div class="mbar" style="height:${Math.max(2,Math.round(val*18))}px;background:${color}"></div>`;
+
+    const badgeCls  = c.cls === 'great' ? 'great' : c.cls === 'awkward' ? 'ok' : 'weak';
+    const badgeText = c.cls === 'great' ? 'FLOWS' : c.cls === 'awkward' ? 'OK' : 'WALLFLOWER';
+
+    const row = document.createElement('div');
+    row.className = `track-row ${c.cls}`;
+    row.innerHTML = `
+      <div class="track-num">${i + 1}</div>
+      <div>
+        <div class="track-name">${esc(c.track.name)}</div>
+        <div class="track-artist">${esc(c.track.artists.map(a => a.name).join(', '))}</div>
+      </div>
+      <div class="track-right">
+        <span class="flow-badge ${badgeCls}">${badgeText}</span>
+        <div class="mini-bars">
+          ${bar(v.energy, 'var(--green)')}
+          ${bar(v.valence, 'var(--purple)')}
+          ${bar(normTempo(v.tempo), 'var(--amber)')}
+          ${bar(v.danceability, 'var(--sky)')}
+        </div>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+
+  document.getElementById('results').style.display = 'block';
+}
+
+function renderTracksOnly(tracks) {
+  document.getElementById('score-num').textContent = '–';
+  document.getElementById('score-num').className = 'score-num na';
+  document.getElementById('score-desc').textContent = 'Audio features unavailable for this Spotify app.';
+  document.getElementById('track-count').textContent = tracks.length;
+
+  const list = document.getElementById('track-list');
+  list.innerHTML = tracks.map((t, i) => `
+    <div class="track-row">
+      <div class="track-num">${i + 1}</div>
+      <div>
+        <div class="track-name">${esc(t.name)}</div>
+        <div class="track-artist">${esc(t.artists.map(a => a.name).join(', '))}</div>
+      </div>
+      <div class="track-right"></div>
+    </div>
+  `).join('');
+
+  document.getElementById('results').style.display = 'block';
+}
+
+function renderRecs(tracks, existingIds) {
+  const fresh = tracks.filter(t => !existingIds.includes(t.id));
+  if (!fresh.length) return;
+
+  const grid = document.getElementById('rec-grid');
+  grid.innerHTML = fresh.slice(0, 6).map(t => {
+    const img = t.album?.images?.[2]?.url || t.album?.images?.[0]?.url;
+    const thumb = img
+      ? `<img class="rec-thumb" src="${img}" alt="" loading="lazy">`
+      : `<div class="rec-placeholder">♪</div>`;
+    return `
+      <div class="rec-row">
+        ${thumb}
+        <div class="rec-info">
+          <div class="rec-name">${esc(t.name)}</div>
+          <div class="rec-artist">${esc(t.artists.map(a => a.name).join(', '))}</div>
+        </div>
+        <a class="rec-link" href="${t.external_urls.spotify}" target="_blank" rel="noopener">Open ↗</a>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('recs-card').style.display = 'block';
+}
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+function setStatus(msg, type = '') {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = `status-msg show ${type}`;
+}
+function clearStatus() {
+  document.getElementById('status-msg').className = 'status-msg';
+}
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ══════════════════════════════════════════════════════════
+// GO
+// ══════════════════════════════════════════════════════════
+init();
+</script>
+
+</body>
+</html>
